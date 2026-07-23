@@ -5,6 +5,7 @@ import (
 	"context"
 	"io"
 	"os"
+	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
@@ -68,6 +69,65 @@ func TestStatusStartTransitionPreservesFrozenTarget(t *testing.T) {
 			t.Fatalf("unborn START = %#v, want target %q", started, status.TargetIdentity)
 		}
 	})
+}
+
+func TestStatusStartTransitionSupportsSelectorFreeUnbornCandidates(t *testing.T) {
+	tests := []struct {
+		name              string
+		stageCandidate    bool
+		intendedUntracked []string
+	}{
+		{name: "staged only", stageCandidate: true, intendedUntracked: []string{}},
+		{name: "untracked only", intendedUntracked: []string{"first.txt"}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			repo := t.TempDir()
+			runReviewCLIGit(t, repo, "init", "-q", "-b", "main")
+			runReviewCLIGit(t, repo, "config", "user.email", "test@example.com")
+			runReviewCLIGit(t, repo, "config", "user.name", "Test")
+			writeReviewStartCandidate(t, repo, "first.txt", "first\n", 0o644)
+			if tt.stageCandidate {
+				runReviewCLIGit(t, repo, "add", "first.txt")
+			}
+			statusBefore := runReviewCLIGit(t, repo, "status", "--porcelain=v2", "--branch")
+			refsBefore := runReviewCLIGit(t, repo, "for-each-ref", "--format=%(refname) %(objectname)")
+
+			status := negotiatedStartStatus(t, repo)
+			assertStartTransition(t, status, []string{"contract", "target", "projection"})
+			if status.Projection.Projection != reviewtransaction.ProjectionWorkspace ||
+				status.Projection.BaseTree != reviewCLIEmptyTree(t, repo) ||
+				!reflect.DeepEqual(status.Projection.Paths, []string{"first.txt"}) ||
+				!reflect.DeepEqual(status.Projection.IntendedUntracked, tt.intendedUntracked) {
+				t.Fatalf("selector-free unborn STATUS = %#v", status.Projection)
+			}
+			if got := startTransitionArgumentValue(t, status, "projection"); got != string(reviewtransaction.ProjectionWorkspace) {
+				t.Fatalf("START projection = %q, want workspace", got)
+			}
+			stores, err := reviewtransaction.DiscoverCompactStores(context.Background(), repo)
+			if err != nil {
+				t.Fatal(err)
+			}
+			gitDir := strings.TrimSpace(runReviewCLIGit(t, repo, "rev-parse", "--absolute-git-dir"))
+			if len(stores) != 0 {
+				t.Fatalf("STATUS created authority: %#v", stores)
+			}
+			if _, err := os.Stat(filepath.Join(gitDir, "gentle-ai")); !os.IsNotExist(err) {
+				t.Fatalf("STATUS authority directory error = %v, want absent", err)
+			}
+			if got := runReviewCLIGit(t, repo, "status", "--porcelain=v2", "--branch"); got != statusBefore {
+				t.Fatalf("STATUS changed candidate state:\nbefore: %s\nafter: %s", statusBefore, got)
+			}
+			if got := runReviewCLIGit(t, repo, "for-each-ref", "--format=%(refname) %(objectname)"); got != refsBefore {
+				t.Fatalf("STATUS changed refs:\nbefore: %s\nafter: %s", refsBefore, got)
+			}
+
+			started := executeStartTransition(t, repo, status)
+			if negotiatedStartTarget(started) != status.TargetIdentity || started.Projection != reviewtransaction.ProjectionWorkspace {
+				t.Fatalf("unborn START = %#v, want target %q", started, status.TargetIdentity)
+			}
+		})
+	}
 }
 
 func TestNegotiatedStartRejectsIncompleteBindingsWithoutAuthority(t *testing.T) {

@@ -584,7 +584,7 @@ func buildCompactGateRequestWithPushBase(ctx context.Context, repo string, state
 			request.Target = Target{Kind: TargetBaseWorkspaceOverlay, Projection: projection, BaseRef: state.InitialSnapshot.BaseTree, IntendedUntracked: intended}
 			break
 		}
-		headTree, _, err := (SnapshotBuilder{Repo: repo}).resolveCurrentChangesBase(ctx, projection)
+		headTree, _, err := (SnapshotBuilder{Repo: repo}).resolveCurrentChangesBase(ctx)
 		if err != nil {
 			return GateRequest{}, nil, err
 		}

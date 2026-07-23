@@ -699,7 +699,7 @@ func readSnapshotIndex(path string) ([]byte, time.Time, error) {
 }
 
 func (builder *SnapshotBuilder) buildCurrentChanges(ctx context.Context, intended []string, allowStagedIntended bool, projection Projection) (string, string, string, error) {
-	baseTree, unborn, err := builder.resolveCurrentChangesBase(ctx, projection)
+	baseTree, unborn, err := builder.resolveCurrentChangesBase(ctx)
 	if err != nil {
 		return "", "", "", err
 	}
@@ -810,10 +810,10 @@ func (builder *SnapshotBuilder) buildCurrentChanges(ctx context.Context, intende
 	return baseTree, candidateTree, proof, nil
 }
 
-func (builder SnapshotBuilder) resolveCurrentChangesBase(ctx context.Context, projection Projection) (string, bool, error) {
+func (builder SnapshotBuilder) resolveCurrentChangesBase(ctx context.Context) (string, bool, error) {
 	baseTree, headErr := builder.resolveTree(ctx, "HEAD")
-	if headErr == nil || projection != ProjectionStaged {
-		return baseTree, false, headErr
+	if headErr == nil {
+		return baseTree, false, nil
 	}
 
 	refOutput, err := runGit(ctx, builder.Repo, nil, nil, "symbolic-ref", "--quiet", "HEAD")

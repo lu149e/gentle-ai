@@ -1081,16 +1081,19 @@ func TestSnapshotBuilderUnbornHeadWithNothingStagedRefusesActionably(t *testing.
 func TestSnapshotBuilderRealGitFailuresAreNotTreatedAsUnborn(t *testing.T) {
 	requireSnapshotGit(t)
 	stagedTarget := Target{Kind: TargetCurrentChanges, Projection: ProjectionStaged, IntendedUntracked: []string{}}
-	t.Run("workspace projection", func(t *testing.T) {
+	t.Run("workspace detached HEAD at missing object", func(t *testing.T) {
 		repo := initUnbornSnapshotRepo(t)
 		writeSnapshotFile(t, repo, "candidate.txt", "reviewed\n")
 		gitSnapshot(t, repo, "add", "--", "candidate.txt")
+		if err := os.WriteFile(filepath.Join(repo, ".git", "HEAD"), []byte(strings.Repeat("0", 40)+"\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
 		_, err := (SnapshotBuilder{Repo: repo}).Build(context.Background(), Target{
 			Kind: TargetCurrentChanges, Projection: ProjectionWorkspace, IntendedUntracked: []string{},
 		})
 		var commandErr *GitCommandError
 		if err == nil || !errors.As(err, &commandErr) {
-			t.Fatalf("unborn workspace error = %v, want the raw git failure", err)
+			t.Fatalf("workspace detached missing-object error = %v, want the raw git failure", err)
 		}
 	})
 	t.Run("detached HEAD at missing object", func(t *testing.T) {
